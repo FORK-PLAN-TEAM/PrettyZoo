@@ -3,6 +3,7 @@ package cc.cc1234.app.controller;
 import cc.cc1234.app.context.ActiveServerContext;
 import cc.cc1234.app.facade.PrettyZooFacade;
 import cc.cc1234.app.util.Formatters;
+import cc.cc1234.app.util.Highlights;
 import cc.cc1234.app.view.toast.VToast;
 import cc.cc1234.app.view.transitions.Transitions;
 import cc.cc1234.specification.node.ZkNode;
@@ -12,6 +13,9 @@ import javafx.scene.control.*;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
+import org.fxmisc.flowless.VirtualizedScrollPane;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
 
 import java.io.UnsupportedEncodingException;
 import java.time.Instant;
@@ -24,6 +28,9 @@ public class NodeInfoViewController {
 
     @FXML
     private AnchorPane nodeInfoPane;
+
+    @FXML
+    private AnchorPane nodeDataPane;
 
     @FXML
     private TextField cZxidField;
@@ -62,9 +69,6 @@ public class NodeInfoViewController {
     private TextField pathField;
 
     @FXML
-    private TextArea dataField;
-
-    @FXML
     private Button nodeUpdateButton;
 
     @FXML
@@ -85,6 +89,8 @@ public class NodeInfoViewController {
     @FXML
     private ChoiceBox<String> charsetChoice;
 
+    private CodeArea dataCodeArea = new CodeArea();
+
     @FXML
     private PrettyZooFacade prettyZooFacade = new PrettyZooFacade();
 
@@ -93,6 +99,8 @@ public class NodeInfoViewController {
     @FXML
     private void initialize() {
         nodeUpdateButton.setOnMouseClicked(e -> onNodeUpdate());
+
+        initCodeArea();
 
         final Tooltip timeLabelTooltip = new Tooltip("Click to change format");
         mtimeLabel.setTooltip(timeLabelTooltip);
@@ -109,14 +117,14 @@ public class NodeInfoViewController {
             if (nv == null) {
                 return;
             }
-            byte[] rawBytes = (byte[]) dataField.getProperties().get("rawBytes");
+            byte[] rawBytes = (byte[]) dataCodeArea.getProperties().get("rawBytes");
             if (rawBytes == null) {
                 return;
             }
             try {
-                dataField.setText(new String(rawBytes, nv));
+                setCodeAreaData(new String(rawBytes, nv));
             } catch (UnsupportedEncodingException unsupportedEncodingException) {
-                VToast.error("Not supported Charset:"+nv);
+                VToast.error("Not supported Charset:" + nv);
             }
         });
     }
@@ -138,6 +146,25 @@ public class NodeInfoViewController {
         switchFormatButton(rawFormatButton);
     }
 
+    private void initCodeArea() {
+        dataCodeArea.setEditable(true);
+        dataCodeArea.setParagraphGraphicFactory(LineNumberFactory.get(dataCodeArea));
+        dataCodeArea.getStyleClass().add("vTextArea");
+        var pane = new VirtualizedScrollPane<>(dataCodeArea);
+        AnchorPane.setTopAnchor(pane, 40d);
+        AnchorPane.setLeftAnchor(pane, 0d);
+        AnchorPane.setRightAnchor(pane, 0d);
+        nodeDataPane.getChildren().add(pane);
+        dataCodeArea.textProperty().addListener((obs, oldText, newText) -> {
+            dataCodeArea.setStyleSpans(0, Highlights.computeHighlighting(newText));
+        });
+    }
+
+    private void setCodeAreaData(String data) {
+        dataCodeArea.clear();
+        dataCodeArea.appendText(data);
+    }
+
     private void onNodeUpdate() {
         final String path = pathField.getText();
         if (!ActiveServerContext.exists()) {
@@ -148,18 +175,18 @@ public class NodeInfoViewController {
             VToast.error("Node not exists");
             return;
         }
-        final String data = dataField.getText();
+        final String data = dataCodeArea.getText();
         Transitions.rotate(nodeUpdateButton, () -> {
             prettyZooFacade.updateData(ActiveServerContext.get(), path, data, ex -> VToast.error(ex.getMessage()));
-            dataField.getProperties().put("raw", data);
+            dataCodeArea.getProperties().put("raw", data);
             VToast.info("update success");
         });
     }
 
     private void initTextField(ZkNode node) {
-        dataField.setText(transformData(node));
-        dataField.getProperties().put("raw", transformData(node));
-        dataField.getProperties().put("rawBytes", node.getDataBytes());
+        setCodeAreaData(transformData(node));
+        dataCodeArea.getProperties().put("raw", transformData(node));
+        dataCodeArea.getProperties().put("rawBytes", node.getDataBytes());
 
         ephemeralOwnerField.setText(String.valueOf(node.getEphemeralOwner()));
         cZxidField.setText(String.valueOf(node.getCzxid()));
@@ -224,7 +251,7 @@ public class NodeInfoViewController {
     }
 
     private void resetTextField() {
-        dataField.clear();
+        dataCodeArea.clear();
         ephemeralOwnerField.clear();
         cZxidField.clear();
         mtimeField.clear();
@@ -240,14 +267,14 @@ public class NodeInfoViewController {
     }
 
     private void dataJsonFormat() {
-        final Object data = dataField.getProperties().get("raw");
+        final Object data = dataCodeArea.getProperties().get("raw");
         if (data == null) {
             return;
         }
         final String prettyJson;
         try {
             prettyJson = Formatters.prettyJson(data.toString());
-            dataField.setText(prettyJson);
+            setCodeAreaData(prettyJson);
             switchFormatButton(jsonFormatButton);
         } catch (JsonProcessingException e) {
             VToast.error("JSON 格式错误");
@@ -255,14 +282,14 @@ public class NodeInfoViewController {
     }
 
     private void dataXmlFormat() {
-        final Object data = dataField.getProperties().get("raw");
+        final Object data = dataCodeArea.getProperties().get("raw");
         if (data == null) {
             return;
         }
         final String prettyXML;
         try {
             prettyXML = Formatters.prettyXml(data.toString());
-            dataField.setText(prettyXML);
+            setCodeAreaData(prettyXML);
             switchFormatButton(xmlFormatButton);
         } catch (Exception e) {
             VToast.error("XML 格式错误");
@@ -270,11 +297,11 @@ public class NodeInfoViewController {
     }
 
     private void dataRawFormat() {
-        final Object data = dataField.getProperties().get("raw");
+        final Object data = dataCodeArea.getProperties().get("raw");
         if (data == null) {
             return;
         }
-        dataField.setText(data.toString());
+        setCodeAreaData(data.toString());
         switchFormatButton(rawFormatButton);
     }
 
